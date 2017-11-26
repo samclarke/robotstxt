@@ -42,6 +42,20 @@ func (e InvalidHostError) Error() string {
 	return "URL is not valid for this robots.txt file"
 }
 
+func parseAndNormalizeURL(urlStr string) (u *url.URL, err error) {
+	u, err = url.Parse(urlStr)
+	if err != nil {
+		return
+	}
+
+	u.Host, err = idna.ToASCII(u.Host)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
 func replaceSuffix(s, suffix, replacement string) string {
 	if strings.HasSuffix(s, suffix) {
 		return s[:len(s)-len(suffix)] + replacement
@@ -62,7 +76,7 @@ func compilePattern(pattern string) (*regexp.Regexp, error) {
 	pattern = replaceSuffix(pattern, "%2524", "%24")
 
 	pattern = strings.Replace(pattern, "%2A", "\\*", -1)
-	println(pattern)
+
 	return regexp.Compile(pattern)
 }
 
@@ -105,12 +119,7 @@ func (r *userAgentRules) isAllowed(userAgent string, path string) bool {
 // RobotsTxt struct that can be used to check if URLs can be crawled
 // or extract crawl delays, sitemaps or the preferred host name
 func Parse(contents string, urlStr string) (robotsTxt *RobotsTxt, err error) {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return
-	}
-
-	u.Host, err = idna.ToASCII(u.Host)
+	u, err := parseAndNormalizeURL(urlStr)
 	if err != nil {
 		return
 	}
@@ -178,14 +187,13 @@ func (r *RobotsTxt) addPathRule(userAgent string, path string, isAllowed bool) e
 	}
 
 	isPattern := isPattern(path)
-	if isPattern && strings.HasSuffix(path, "%24") {
-		path = strings.TrimSuffix(path, "%24") + "%2524"
+	if isPattern {
+		path = replaceSuffix(path, "%24", "%2524")
 	}
 
 	// Keep * escaped
 	path = strings.Replace(path, "%2A", "%252A", -1)
-	unescapedPath, err := url.PathUnescape(path)
-	if err == nil {
+	if unescapedPath, err := url.PathUnescape(path); err == nil {
 		path = unescapedPath
 	} else {
 		path = strings.Replace(path, "%252A", "%2A", -1)
@@ -220,12 +228,9 @@ func (r *RobotsTxt) addCrawlDelay(userAgent string, crawlDelay string) (err erro
 		r.userAgentRules[userAgent] = agentRules
 	}
 
-	delay, err := strconv.ParseFloat(crawlDelay, 32)
-	if err != nil {
-		return
+	if delay, err := strconv.ParseFloat(crawlDelay, 32); err == nil {
+		agentRules.crawlDelay = float32(delay)
 	}
-
-	agentRules.crawlDelay = float32(delay)
 
 	return
 }
@@ -238,13 +243,13 @@ func (r *RobotsTxt) Host() string {
 // CrawlDelay returns the crawl delay for the specified
 // user agent or 0 if there is none
 func (r *RobotsTxt) CrawlDelay(userAgent string) float32 {
-	agentRules, ok := r.userAgentRules[normaliseUserAgent(userAgent)]
-	if ok {
+	userAgent = normaliseUserAgent(userAgent)
+
+	if agentRules, ok := r.userAgentRules[userAgent]; ok {
 		return agentRules.crawlDelay
 	}
 
-	agentRules, ok = r.userAgentRules["*"]
-	if ok {
+	if agentRules, ok := r.userAgentRules["*"]; ok {
 		return agentRules.crawlDelay
 	}
 
@@ -258,12 +263,7 @@ func (r *RobotsTxt) Sitemaps() []string {
 
 // IsAllowed checks if the specified path is allowed by the robots.txt file
 func (r *RobotsTxt) IsAllowed(userAgent string, urlStr string) (result bool, err error) {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return
-	}
-
-	u.Host, err = idna.ToASCII(u.Host)
+	u, err := parseAndNormalizeURL(urlStr)
 	if err != nil {
 		return
 	}
