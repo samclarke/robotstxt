@@ -3,6 +3,7 @@ package robotstxt
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func testRobots(t *testing.T, contents string, url string, allowed []string, disallowed []string) {
@@ -297,7 +298,7 @@ func TestRobotsTxt_parseTheCrawlDelayDirective(t *testing.T) {
 
 	robots, _ := Parse(contents, url)
 
-	if robots.CrawlDelay("a") != 1 {
+	if robots.CrawlDelay("a") != time.Second {
 		t.Errorf("Expected crawl delay for a to be 1")
 	}
 
@@ -305,11 +306,11 @@ func TestRobotsTxt_parseTheCrawlDelayDirective(t *testing.T) {
 		t.Errorf("Expected crawl delay for b to be 0")
 	}
 
-	if robots.CrawlDelay("c") != 10 {
+	if robots.CrawlDelay("c") != 10*time.Second {
 		t.Errorf("Expected crawl delay for c to be 10")
 	}
 
-	if robots.CrawlDelay("d") != 10 {
+	if robots.CrawlDelay("d") != 10*time.Second {
 		t.Errorf("Expected crawl delay for d to be 10")
 	}
 }
@@ -483,15 +484,15 @@ func TestRobotsTxt_fallbackToDefaultWhenUserAgentHasRulesOfItsOwn(t *testing.T) 
 
 	robots, _ := Parse(contents, url)
 
-	if robots.CrawlDelay("should-fall-back") != 1 {
+	if robots.CrawlDelay("should-fall-back") != 1*time.Second {
 		t.Errorf("Expected crawl delay for should-fall-back to be 1")
 	}
 
-	if robots.CrawlDelay("d") != 10 {
+	if robots.CrawlDelay("d") != 10*time.Second {
 		t.Errorf("Expected crawl delay for d to be 10")
 	}
 
-	if robots.CrawlDelay("dd") != 1 {
+	if robots.CrawlDelay("dd") != 1*time.Second {
 		t.Errorf("Expected crawl delay for dd to be 1")
 	}
 
@@ -514,7 +515,7 @@ func TestRobotsTxt_shouldNotFallbackToDefaultWhenUserAgentHasRules(t *testing.T)
 
 	robots, _ := Parse(contents, url)
 
-	if robots.CrawlDelay("b") != 0 {
+	if robots.CrawlDelay("b") != 0*time.Second {
 		t.Errorf("Expected crawl delay for b to be 0")
 	}
 
@@ -540,19 +541,19 @@ func TestRobotsTxt_ignoreVersionNumbersInTheUserAgentString(t *testing.T) {
 
 	robots, _ := Parse(contents, url)
 
-	if robots.CrawlDelay("should-fall-back/1.0.0") != 1 {
+	if robots.CrawlDelay("should-fall-back/1.0.0") != time.Second {
 		t.Errorf("Expected crawl delay for should-fall-back/1.0.0 to be 1")
 	}
 
-	if robots.CrawlDelay("d/12") != 10 {
+	if robots.CrawlDelay("d/12") != 10*time.Second {
 		t.Errorf("Expected crawl delay for d/12 to be 10")
 	}
 
-	if robots.CrawlDelay("dd / 0-32-3") != 1 {
+	if robots.CrawlDelay("dd / 0-32-3") != 1*time.Second {
 		t.Errorf("Expected crawl delay for dd / 0-32-3 to be 1")
 	}
 
-	if robots.CrawlDelay("b / 1.0") != 12 {
+	if robots.CrawlDelay("b / 1.0") != 12*time.Second {
 		t.Errorf("Expected crawl delay for b / 1.0 to be 12")
 	}
 }

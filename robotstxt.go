@@ -1,37 +1,37 @@
 // Package robotstxt parses robots.txt files
-package robotstxt
-
-// Aims to follow the Google specification, see:
+//
+// Aims to follow the Google robots.txt specification, see:
 // https://developers.google.com/search/reference/robots_txt
 // for more information.
+package robotstxt
 
 import (
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/idna"
 )
 
 type rule struct {
-	isPattern bool
 	isAllowed bool
 	path      string
 	pattern   *regexp.Regexp
 }
 
-type userAgentRules struct {
+type group struct {
 	rules      []*rule
-	crawlDelay float32
+	crawlDelay time.Duration
 }
 
 // RobotsTxt represents a parsed robots.txt file
 type RobotsTxt struct {
-	url            *url.URL
-	userAgentRules map[string]*userAgentRules
-	sitemaps       []string
-	host           string
+	url      *url.URL
+	groups   map[string]*group
+	sitemaps []string
+	host     string
 }
 
 // InvalidHostError is the error when a URL is tested with IsAllowed that
@@ -44,23 +44,19 @@ func (e InvalidHostError) Error() string {
 
 func parseAndNormalizeURL(urlStr string) (u *url.URL, err error) {
 	u, err = url.Parse(urlStr)
-	if err != nil {
-		return
-	}
-
-	u.Host, err = idna.ToASCII(u.Host)
-	if err != nil {
-		return
+	if err == nil {
+		u.Host, err = idna.ToASCII(u.Host)
 	}
 
 	return
 }
 
-func replaceSuffix(s, suffix, replacement string) string {
-	if strings.HasSuffix(s, suffix) {
-		return s[:len(s)-len(suffix)] + replacement
+func replaceSuffix(str, suffix, replacement string) string {
+	if strings.HasSuffix(str, suffix) {
+		return str[:len(str)-len(suffix)] + replacement
 	}
-	return s
+
+	return str
 }
 
 func isPattern(path string) bool {
@@ -89,18 +85,18 @@ func normaliseUserAgent(userAgent string) string {
 	return strings.ToLower(strings.TrimSpace(userAgent))
 }
 
-func (r *userAgentRules) isAllowed(userAgent string, path string) bool {
+func (r *group) isAllowed(userAgent string, path string) bool {
 	var result = true
 	var resultPathLength = 0
 
 	for _, rule := range r.rules {
-		if rule.isPattern {
+		if rule.pattern != nil {
 			// The first matching pattern takes precedence
 			if rule.pattern.MatchString(path) {
 				return rule.isAllowed
 			}
 		} else {
-			// The longest matching path precedence
+			// The longest matching path takes precedence
 			if resultPathLength > len(rule.path) {
 				continue
 			}
@@ -125,8 +121,8 @@ func Parse(contents string, urlStr string) (robotsTxt *RobotsTxt, err error) {
 	}
 
 	robotsTxt = &RobotsTxt{
-		url:            u,
-		userAgentRules: make(map[string]*userAgentRules),
+		url:    u,
+		groups: make(map[string]*group),
 	}
 
 	var userAgents []string
@@ -180,10 +176,10 @@ func Parse(contents string, urlStr string) (robotsTxt *RobotsTxt, err error) {
 }
 
 func (r *RobotsTxt) addPathRule(userAgent string, path string, isAllowed bool) error {
-	agentRules, ok := r.userAgentRules[userAgent]
+	g, ok := r.groups[userAgent]
 	if !ok {
-		agentRules = &userAgentRules{}
-		r.userAgentRules[userAgent] = agentRules
+		g = &group{}
+		r.groups[userAgent] = g
 	}
 
 	isPattern := isPattern(path)
@@ -205,14 +201,12 @@ func (r *RobotsTxt) addPathRule(userAgent string, path string, isAllowed bool) e
 			return err
 		}
 
-		agentRules.rules = append(agentRules.rules, &rule{
-			isPattern: true,
+		g.rules = append(g.rules, &rule{
 			pattern:   regexPattern,
 			isAllowed: isAllowed,
 		})
 	} else {
-		agentRules.rules = append(agentRules.rules, &rule{
-			isPattern: false,
+		g.rules = append(g.rules, &rule{
 			path:      path,
 			isAllowed: isAllowed,
 		})
@@ -222,14 +216,14 @@ func (r *RobotsTxt) addPathRule(userAgent string, path string, isAllowed bool) e
 }
 
 func (r *RobotsTxt) addCrawlDelay(userAgent string, crawlDelay string) (err error) {
-	agentRules, ok := r.userAgentRules[userAgent]
+	g, ok := r.groups[userAgent]
 	if !ok {
-		agentRules = &userAgentRules{}
-		r.userAgentRules[userAgent] = agentRules
+		g = &group{}
+		r.groups[userAgent] = g
 	}
 
-	if delay, err := strconv.ParseFloat(crawlDelay, 32); err == nil {
-		agentRules.crawlDelay = float32(delay)
+	if delay, err := strconv.ParseFloat(crawlDelay, 64); err == nil {
+		g.crawlDelay = time.Duration(delay * float64(time.Second))
 	}
 
 	return
@@ -242,15 +236,13 @@ func (r *RobotsTxt) Host() string {
 
 // CrawlDelay returns the crawl delay for the specified
 // user agent or 0 if there is none
-func (r *RobotsTxt) CrawlDelay(userAgent string) float32 {
-	userAgent = normaliseUserAgent(userAgent)
-
-	if agentRules, ok := r.userAgentRules[userAgent]; ok {
-		return agentRules.crawlDelay
+func (r *RobotsTxt) CrawlDelay(userAgent string) time.Duration {
+	if group, ok := r.groups[normaliseUserAgent(userAgent)]; ok {
+		return group.crawlDelay
 	}
 
-	if agentRules, ok := r.userAgentRules["*"]; ok {
-		return agentRules.crawlDelay
+	if group, ok := r.groups["*"]; ok {
+		return group.crawlDelay
 	}
 
 	return 0
@@ -275,10 +267,10 @@ func (r *RobotsTxt) IsAllowed(userAgent string, urlStr string) (result bool, err
 
 	result = true
 
-	if rules, ok := r.userAgentRules[normaliseUserAgent(userAgent)]; ok {
-		result = rules.isAllowed(userAgent, u.Path)
-	} else if rules, ok := r.userAgentRules["*"]; ok {
-		result = rules.isAllowed(userAgent, u.Path)
+	if group, ok := r.groups[normaliseUserAgent(userAgent)]; ok {
+		result = group.isAllowed(userAgent, u.Path)
+	} else if group, ok := r.groups["*"]; ok {
+		result = group.isAllowed(userAgent, u.Path)
 	}
 
 	return
