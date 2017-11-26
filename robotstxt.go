@@ -1,7 +1,11 @@
+// Package robotstxt parses robots.txt files
 package robotstxt
 
+// Aims to follow the Google specification, see:
+// https://developers.google.com/search/reference/robots_txt
+// for more information.
+
 import (
-	"errors"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -22,12 +26,27 @@ type userAgentRules struct {
 	crawlDelay float32
 }
 
-// RobotsTxt is a parsed robots.txt file
+// RobotsTxt represents a parsed robots.txt file
 type RobotsTxt struct {
 	url            *url.URL
 	userAgentRules map[string]*userAgentRules
 	sitemaps       []string
 	host           string
+}
+
+// InvalidHostError is the error when a URL is tested with IsAllowed that
+// is not valid for this robots.txt file
+type InvalidHostError struct{}
+
+func (e InvalidHostError) Error() string {
+	return "URL is not valid for this robots.txt file"
+}
+
+func replaceSuffix(s, suffix, replacement string) string {
+	if strings.HasSuffix(s, suffix) {
+		return s[:len(s)-len(suffix)] + replacement
+	}
+	return s
 }
 
 func isPattern(path string) bool {
@@ -37,10 +56,13 @@ func isPattern(path string) bool {
 func compilePattern(pattern string) (*regexp.Regexp, error) {
 	pattern = regexp.QuoteMeta(pattern)
 	pattern = strings.Replace(pattern, "\\*", "(?:.*)", -1)
-	if strings.HasSuffix(pattern, "\\$") {
-		pattern = strings.TrimSuffix(pattern, "\\$") + "$"
-	}
 
+	pattern = replaceSuffix(pattern, "\\$", "$")
+	pattern = replaceSuffix(pattern, "%24", "\\$")
+	pattern = replaceSuffix(pattern, "%2524", "%24")
+
+	pattern = strings.Replace(pattern, "%2A", "\\*", -1)
+	println(pattern)
 	return regexp.Compile(pattern)
 }
 
@@ -79,7 +101,9 @@ func (r *userAgentRules) isAllowed(userAgent string, path string) bool {
 	return result
 }
 
-// Parse parses the contents or a robots.txt file and returns a RobotsTxt struct
+// Parse parses the contents or a robots.txt file and returns a
+// RobotsTxt struct that can be used to check if URLs can be crawled
+// or extract crawl delays, sitemaps or the preferred host name
 func Parse(contents string, urlStr string) (robotsTxt *RobotsTxt, err error) {
 	u, err := url.Parse(urlStr)
 	if err != nil {
@@ -153,12 +177,21 @@ func (r *RobotsTxt) addPathRule(userAgent string, path string, isAllowed bool) e
 		r.userAgentRules[userAgent] = agentRules
 	}
 
+	isPattern := isPattern(path)
+	if isPattern && strings.HasSuffix(path, "%24") {
+		path = strings.TrimSuffix(path, "%24") + "%2524"
+	}
+
+	// Keep * escaped
+	path = strings.Replace(path, "%2A", "%252A", -1)
 	unescapedPath, err := url.PathUnescape(path)
 	if err == nil {
 		path = unescapedPath
+	} else {
+		path = strings.Replace(path, "%252A", "%2A", -1)
 	}
 
-	if isPattern(path) {
+	if isPattern {
 		regexPattern, err := compilePattern(path)
 		if err != nil {
 			return err
@@ -202,7 +235,8 @@ func (r *RobotsTxt) Host() string {
 	return r.host
 }
 
-// CrawlDelay returns the crawl delay for the specified UA or 0 if there is none
+// CrawlDelay returns the crawl delay for the specified
+// user agent or 0 if there is none
 func (r *RobotsTxt) CrawlDelay(userAgent string) float32 {
 	agentRules, ok := r.userAgentRules[normaliseUserAgent(userAgent)]
 	if ok {
@@ -217,7 +251,7 @@ func (r *RobotsTxt) CrawlDelay(userAgent string) float32 {
 	return 0
 }
 
-// Sitemaps returns a list of sitemaps from the robots.txt file
+// Sitemaps returns a list of sitemaps from the robots.txt file if any
 func (r *RobotsTxt) Sitemaps() []string {
 	return r.sitemaps
 }
@@ -235,7 +269,7 @@ func (r *RobotsTxt) IsAllowed(userAgent string, urlStr string) (result bool, err
 	}
 
 	if u.Scheme != r.url.Scheme || u.Host != r.url.Host {
-		err = errors.New("URL not valid for this robots.txt file")
+		err = &InvalidHostError{}
 		return
 	}
 

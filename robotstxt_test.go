@@ -238,7 +238,8 @@ func TestRobotsTxt_returnErrorForInvalidUrls(t *testing.T) {
 
 	for _, u := range invalidUrls {
 		_, err := robots.IsAllowed("*", u)
-		if err == nil {
+		_, ok := err.(*InvalidHostError)
+		if !ok {
 			t.Errorf("The URL " + u + " should cause an error")
 		}
 	}
@@ -310,6 +311,17 @@ func TestRobotsTxt_parseTheCrawlDelayDirective(t *testing.T) {
 
 	if robots.CrawlDelay("d") != 10 {
 		t.Errorf("Expected crawl delay for d to be 10")
+	}
+}
+
+func TestRobotsTxt_returnZeroIfEmpty(t *testing.T) {
+	url := "http://www.example.com/robots.txt"
+	contents := ``
+
+	robots, _ := Parse(contents, url)
+
+	if robots.CrawlDelay("a") != 0 {
+		t.Errorf("Expected crawl delay for a to be 0")
 	}
 }
 
@@ -545,7 +557,7 @@ func TestRobotsTxt_ignoreVersionNumbersInTheUserAgentString(t *testing.T) {
 	}
 }
 
-func TestRobotsTxt_handleUrlEncodedAndUtf8PathsAndUrlss(t *testing.T) {
+func TestRobotsTxt_handleUrlEncodedAndUtf8PathsAndUrls(t *testing.T) {
 	url := "http://www.example.com/robots.txt"
 	contents := `
 		User-agent: *
@@ -569,6 +581,61 @@ func TestRobotsTxt_handleUrlEncodedAndUtf8PathsAndUrlss(t *testing.T) {
 		"http://www.example.com/测试",
 		"http://www.example.com/%E8%80%83%E6%9F%A5/test",
 		"http://www.example.com/%E0%A6%AA%E0%A6%B0%E0%A7%80%E0%A6%95%E0%A7%8D%E0%A6%B7%E0%A6%BE",
+	}
+
+	testRobots(t, contents, url, allowed, disallowed)
+}
+
+func TestRobotsTxt_invalidUrlEncodingsShouldBeTreatedAsUnencoded(t *testing.T) {
+	url := "http://www.example.com/robots.txt"
+	contents := `
+		User-agent: *
+		Disallow: /%20%A/test
+		Disallow: /%24%A/test$
+		Disallow: /%B/*test%24
+	`
+
+	allowed := []string{
+		"http://www.example.com/ %25A/test/test",
+		"http://www.example.com/+%25A/test",
+		"http://www.example.com/%20%25A/test",
+		"http://www.example.com/*%25A/testing",
+		"http://www.example.com/%25B/test$",
+	}
+
+	disallowed := []string{
+		"http://www.example.com/%2520%25A/test",
+		"http://www.example.com/%2524%25A/test",
+		"http://www.example.com/%25B/test%2524",
+	}
+
+	testRobots(t, contents, url, allowed, disallowed)
+}
+
+func TestRobotsTxt_handleUrlEncodingsWithPatterns(t *testing.T) {
+	url := "http://www.example.com/robots.txt"
+	contents := `
+		User-agent: *
+		Disallow: /%20A/*test$
+		Disallow: /%20B/*test%24
+		Disallow: /%20C/test%24
+		Disallow: /%20D/%2Atest$
+	`
+
+	allowed := []string{
+		"http://www.example.com/ A/la/testing",
+		"http://www.example.com/ B/la/test",
+		"http://www.example.com/ C/test",
+		"http://www.example.com/ D/la/test",
+	}
+
+	disallowed := []string{
+		"http://www.example.com/ A/la/test",
+		"http://www.example.com/ B/la/test$",
+		"http://www.example.com/ B/la/test$test",
+		"http://www.example.com/ C/test$",
+		"http://www.example.com/ D/*test",
+		"http://www.example.com/ D/%2Atest",
 	}
 
 	testRobots(t, contents, url, allowed, disallowed)
