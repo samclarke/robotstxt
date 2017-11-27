@@ -1,4 +1,4 @@
-# Robots Parser [![Build Status](https://travis-ci.org/samclarke/robotstxt.svg?branch=master)](https://travis-ci.org/samclarke/robotstxt) [![Coverage Status](https://coveralls.io/repos/github/samclarke/robotstxt/badge.svg?branch=master)](https://coveralls.io/github/samclarke/robotstxt?branch=master) [![GoDoc](https://godoc.org/github.com/samclarke/robotstxt?status.svg)](http://godoc.org/github.com/samclarke/robotstxt)
+# Robots Parser [![Build Status](https://travis-ci.org/samclarke/robotstxt.svg?branch=master)](https://travis-ci.org/samclarke/robotstxt) [![Coverage Status](https://coveralls.io/repos/github/samclarke/robotstxt/badge.svg?branch=master)](https://coveralls.io/github/samclarke/robotstxt?branch=master) [![Go Report Card](https://goreportcard.com/badge/github.com/samclarke/robotstxt)](https://goreportcard.com/report/github.com/samclarke/robotstxt) [![GoDoc](https://godoc.org/github.com/samclarke/robotstxt?status.svg)](http://godoc.org/github.com/samclarke/robotstxt)
 
 A robots.txt parser written in Go, based on the Node.js [robots-parser package](https://github.com/samclarke/robots-parser).
 
